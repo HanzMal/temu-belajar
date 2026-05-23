@@ -1,6 +1,6 @@
 const express = require('express')
 const app = express()
-const port = 3000
+const port = process.env.PORT
 
 const { Pool } = require('pg')
 require("dotenv").config()
@@ -19,14 +19,6 @@ const sequelize = new Sequelize({
     },
     timezone: '+07:00'
 });
-
-sequelize.authenticate()
-.then(() => {
-    console.log("Database Connected"); 
-})
-.catch((err) => {
-    console.log("Failed Connect", err)
-})
 
 // models
 const User = sequelize.define('User', {
@@ -203,3 +195,29 @@ EventAttachment.belongsTo(Event, {
     onUpdate: 'CASCADE',
 })
 
+// sinkronisasi table database
+async function syncDatabase() {
+    try {
+        await sequelize.sync({ alter: true });
+        console.log('All tables has been synchronized successfully.');
+    } catch (error) {
+        console.error('Error synchronizing database:', error);
+    }
+}
+
+async function startServer() {
+    try {
+        await sequelize.authenticate();
+        console.log("Database synchronized successfully");
+
+        await syncDatabase();
+
+        app.listen(port, () => {
+            console.log(`Server is running on http://localhost:${port}`);
+        });
+    } catch (error) {
+        console.error("Unable to connect to the database:", error);
+    }
+}
+
+startServer()
