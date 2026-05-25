@@ -1,10 +1,26 @@
-const express = require('express')
+const express = require('express');
+const session = require('express-session');
 const app = express()
-const port = process.env.PORT
+const port = process.env.PORT || 3000
+const path = require('path')
 
 const { Pool } = require('pg')
 require("dotenv").config()
-const {Sequelize, DataTypes} = require('sequelize')
+const {Sequelize, DataTypes, Op} = require('sequelize')
+
+// middleware
+app.use(express.urlencoded({extended: true}))
+app.use(express.json())
+app.use(express.static('public'))
+app.use(session({
+    secret: process.env.SECTION_SECRET,
+    resave: false,
+    saveUninitialized: false
+}))
+
+// set view engine
+app.set('view engine', 'ejs')
+app.set('views', path.join(__dirname, 'views'))
 
 const sequelize = new Sequelize({
     dialect: 'postgres',
@@ -39,7 +55,7 @@ const User = sequelize.define('User', {
 const Category = sequelize.define('Category', {
     id: {type: DataTypes.INTEGER, primaryKey: true, autoIncrement:true},
     name: {type: DataTypes.STRING(255), allowNull: false},
-    dscription: {type: DataTypes.TEXT, allowNull: false},
+    description: {type: DataTypes.TEXT, allowNull: false},
     icon: {type: DataTypes.STRING(50), allowNull: false},
 }, {
     tableName: 'categories',
@@ -51,7 +67,7 @@ const Category = sequelize.define('Category', {
 const Event = sequelize.define('Event', {
     id: {type: DataTypes.INTEGER, primaryKey: true, autoIncrement:true},
     title: {type: DataTypes.STRING(255), allowNull: false},
-    dscription: {type: DataTypes.TEXT, allowNull: false},
+    description: {type: DataTypes.TEXT, allowNull: false},
     image_path: {type: DataTypes.STRING(255), allowNull: false},
     venue: {type: DataTypes.STRING(255), allowNull: false},
     event_date: {type: DataTypes.DATE, allowNull: false},
@@ -193,6 +209,55 @@ EventAttachment.belongsTo(Event, {
     foreignKey: 'event_id',
     onDelete: 'RESTRICT',
     onUpdate: 'CASCADE',
+})
+
+// Semua controller 
+app.get('/', async(req, res) => {
+    try{
+        const categories = await Category.findAll()
+        let cities = []
+
+        try{
+            const citiesData = await Event.findAll({
+                attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('city')), 'city']],
+                where: {is_published: true},
+                order: [['city', 'ASC']]
+            })
+
+            cities = citiesData.map(c => c.city).filter(city => city)
+        } catch(error) {
+            console.log('Error Fetching Data city', error)
+            cities = ['Jakarta', 'Bandung', 'Semarang', 'Yogyakarta']
+        }
+
+        const latestEvents = await Event.findAll({
+            where: {is_published: true},
+            include: [Category, User],
+            order: [['created_at', 'DESC']],
+            limit: 6
+        })
+
+        const upcomingEvents = await Event.findAll({
+            where: {
+                is_published: true,
+                event_date: {[Op.gte]: new Date()}
+            },
+            include: [Category, User],
+            order: [['created_at', 'DESC']],
+            limit: 6
+        })
+
+        res.render('home', {
+            user: req.session.user,
+            categories,
+            cities: cities,
+            latestEvents,
+            upcomingEvents
+        })
+    } catch (error) {
+        console.error(error)
+        res.status(500).send('Server Error')
+    }
 })
 
 // sinkronisasi table database
